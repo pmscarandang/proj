@@ -16,6 +16,9 @@ public class Game {
 	public static List<Card> talon;
 	public static List<Card> waste;
 
+	boolean gameOver = false;
+	int counter = 0;
+
 	public enum Suit {
 		DIAMONDS, SPADES, HEARTS, CLUBS // arranged in ordinal for the colors black (spades & clubs) and red (hearts &
 										// diamonds)
@@ -30,6 +33,10 @@ public class Game {
 			this.suit = suit;
 			this.rank = rank;
 			this.faceUp = faceUp;
+		}
+
+		public Suit getSuit() {
+			return suit;
 		}
 
 		@Override
@@ -121,20 +128,17 @@ public class Game {
 	 */
 
 	public void playGame() {
-		int maxMoves = 1000;
-		int movesCounter = 0;
 
-		while (movesCounter < maxMoves && !isGameOver()) {
+		while (!gameOver) {
 			boolean moved = makeMoves();
-			movesCounter++;
 
 			if (!moved) {
 				drawCard(); // draw a card if no moves are available
-			} else {
-				drawCard();
 			}
-
 			displayGameState();
+			if (counter == 3) {
+				gameOver = true;
+			}
 		}
 
 		if (isGameOver()) {
@@ -155,9 +159,10 @@ public class Game {
 			waste.clear();
 			// Reverse the order to maintain the correct order in talon
 			Collections.reverse(talon);
+			counter++;
 		}
 
-		if (!talon.isEmpty()) {
+		else {
 			Card drawnCard = talon.remove(talon.size() - 1);
 			drawnCard.faceUp = true;
 			waste.add(drawnCard);
@@ -211,15 +216,80 @@ public class Game {
 				Card currentCard = tableau[i].get(tableau[i].size() - 1);
 				if (currentCard.faceUp) {
 					if (moveToFoundation(currentCard)) {
+						counter = 0;
 						tableau[i].remove(currentCard);
 						moved = true;
 						canMoveToFoundation = true;
 						break;
-					} else if (moveWithinTableau(currentCard, i)) {
-						moved = true;
-						break;
 					}
 				}
+			}
+		}
+
+		// Iterate through all cards in the tableau piles
+		for (int k = tableau.length - 1; k >= 0; k--) {
+			List<Card> tableauPile = tableau[k];
+			int lastIndex = tableauPile.size() - 1;
+			List<Card> sublist = new ArrayList<>();
+			if (!tableauPile.isEmpty()) {
+
+				// Attempt to move the card to another tableau pile
+				// Check if there are cards to move
+				if (lastIndex >= 0) {
+					sublist.add(tableauPile.get(lastIndex)); // Add the top card to the sublist
+					// Traverse the cards in reverse order starting from the second top card
+					for (int i = lastIndex; i >= 0; i--) {
+						Card currentCard = tableauPile.get(i);
+						Card previousCard = tableauPile.size() > 1 && i > 0
+								? tableauPile.get(i - 1)
+								: null; // Get the last card in the sublist
+						if (previousCard != null && previousCard.faceUp) {
+							// Check if the current card can be added to the sublist
+							if (areOppositeColors(currentCard, previousCard)
+									&& currentCard.rank == (previousCard.rank - 1)) {
+								System.out.println(previousCard + " Added to sublist " + sublist);
+								sublist.add(0, previousCard);
+								System.out.println("Sublist: " + sublist);
+							} else {
+								break; // Stop if the current card doesn't meet the conditions
+							}
+						}
+					}
+				}
+				for (int j = tableau.length - 1; j >= 0; j--) {
+					List<Card> destinationPile = tableau[j];
+					Card destinationTopCard = destinationPile.isEmpty() ? null
+							: destinationPile.get(destinationPile.size() - 1);
+					if (destinationTopCard == null) {
+						if (sublist.get(0).rank == 13) {
+							if (canMoveToDestination(destinationPile, tableauPile, sublist)) {
+								destinationPile.addAll(sublist);
+								tableauPile.removeAll(sublist);
+								counter = 0;
+								moved = true;
+								break; // Exit the loop after a move is made
+							}
+						}
+					} else {
+						if (destinationPile != tableauPile && (areOppositeColors(sublist.get(0), destinationTopCard)
+								&& sublist.get(0).rank == (destinationTopCard.rank - 1))) {
+							if (canMoveToDestination(destinationPile, tableauPile, sublist)) {
+								destinationPile.addAll(sublist);
+								tableauPile.removeAll(sublist);
+								counter = 0;
+								moved = true;
+								break; // Exit the loop after a move is made
+							}
+
+						}
+					}
+
+				}
+
+				if (moved) {
+					break; // Exit the outer loop after a move is made
+				}
+
 			}
 		}
 
@@ -246,57 +316,20 @@ public class Game {
 		return moved || canMoveToFoundation;
 	}
 
-	public boolean moveWithinTableau(Card currentCard, int currentIndex) {
-
-		for (int j = 0; j < numTableau; j++) {
-			if (currentIndex != j && (!tableau[j].isEmpty()
-					|| (tableau[j].isEmpty() && currentCard.rank == 13 && currentCard.faceUp))) {
-				Card targetCard = tableau[j].isEmpty() ? null : tableau[j].get(tableau[j].size() - 1);
-				if (targetCard == null || isMoveValidForBatch(currentCard, targetCard)) {
-					int startIndex = tableau[currentIndex].indexOf(currentCard);
-
-					
-					boolean allFaceUp = true;
-					for (int k = startIndex; k < tableau[currentIndex].size(); k++) {
-						if (!tableau[currentIndex].get(k).faceUp) {
-							allFaceUp = false;
-							break;
-						}
-					}
-
-					if (allFaceUp) {
-						
-						List<Card> movedCards = new ArrayList<>(
-								tableau[currentIndex].subList(startIndex, tableau[currentIndex].size()));
-						tableau[currentIndex].subList(startIndex, tableau[currentIndex].size()).clear();
-						tableau[j].addAll(movedCards);
-
-						
-						Card updatedTopCard = tableau[j].get(tableau[j].size() - 1);
-						updatedTopCard.faceUp = true;
-
-						
-						if (!tableau[currentIndex].isEmpty()) {
-							Card newTopCard = tableau[currentIndex].get(tableau[currentIndex].size() - 1);
-							newTopCard.faceUp = true;
-						}
-
-						return true; 
-					}
-
-				}
-
+	private boolean canMoveToDestination(List<Card> destinationPile, List<Card> tableauPile, List<Card> sublist) {
+		Card sublistTopCard = sublist.get(0);
+		Card destinationTopCard = destinationPile.isEmpty() ? null
+							: destinationPile.get(destinationPile.size() - 1);
+		if (tableauPile.size() == sublist.size() && sublistTopCard.rank == 13) {
+			if (destinationPile.isEmpty()) {
+				return false;
 			}
-
 		}
-
-		return false;
-
-	}
-
-	public boolean isMoveValidForBatch(Card currentCard, Card targetCard) {
-		return (currentCard.rank == targetCard.rank - 1)
-				&& (currentCard.suit.ordinal() % 2 != targetCard.suit.ordinal() % 2);
+		else if (destinationPile.isEmpty() && sublistTopCard.rank == 13){
+			return true;
+		}
+		return ((areOppositeColors(sublist.get(0), destinationTopCard)
+				&& sublist.get(0).rank == (destinationTopCard.rank - 1)));
 	}
 
 	public boolean moveToFoundation(Card card) {
@@ -337,6 +370,15 @@ public class Game {
 			}
 		}
 		return false;
+	}
+
+	public static boolean areOppositeColors(Card card1, Card card2) {
+		Suit suit1 = card1.getSuit();
+		Suit suit2 = card2.getSuit();
+
+		// Check if the colors are opposite based on ordinal values
+		return (suit1.ordinal() % 2 == 0 && suit2.ordinal() % 2 != 0) ||
+				(suit1.ordinal() % 2 != 0 && suit2.ordinal() % 2 == 0);
 	}
 
 	// method to find the index of a card in tableau
@@ -402,6 +444,7 @@ public class Game {
 		for (int i = 0; i < numTableau; i++) {
 			System.out.print("Pile " + (i + 1) + ": ");
 			if (!tableau[i].isEmpty()) {
+				tableau[i].get(tableau[i].size()-1).faceUp = true;
 				for (Card card : tableau[i]) {
 					System.out.print(card + ", ");
 				}
